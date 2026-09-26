@@ -61,6 +61,37 @@ class TestServerHandshake < Minitest::Test
     assert_equal COMPAT_PYTHON, state.client_version
   end
 
+  # No upper bound: a client released after this plugin (a Python-only
+  # hotfix) completes the handshake.
+  def test_hello_with_newer_client_version_succeeds
+    newer = "99.0.0"
+    sock = FakeSocket.new(read_chunks: [hello_frame(version: newer)])
+    fs = FakeServer.new([sock])
+    srv = run_one_tick(fs)
+    frames = all_frames(sock.written)
+    assert_equal 1, frames.size
+    refute frames[0].key?("error"),
+      "newer client must not be rejected: #{frames[0]["error"].inspect}"
+    assert_equal MCPforSketchUp::Core::Compat::SERVER_VERSION, frames[0]["result"]["server_version"]
+    refute sock.closed?
+    state = srv.instance_variable_get(:@clients).values.first
+    assert state.handshaked
+    assert_equal newer, state.client_version
+  end
+
+  # Review focus 3: a future client may send extra hello params; the plugin
+  # validates only client_version and must still complete the handshake.
+  def test_hello_with_extra_params_succeeds
+    params = { "client_version" => COMPAT_PYTHON, "client_package_version" => "99.0.0" }
+    sock = FakeSocket.new(read_chunks: [hello_frame(params_override: params)])
+    fs = FakeServer.new([sock])
+    run_one_tick(fs)
+    frames = all_frames(sock.written)
+    assert_equal 1, frames.size
+    refute frames[0].key?("error")
+    refute sock.closed?
+  end
+
   def test_post_handshake_tools_call_works_after_hello
     chunks = [
       hello_frame(id: 0),

@@ -33,66 +33,46 @@ class TestCompat < Minitest::Test
 
   # -------- check_python_version --------
 
-  # Safe swap of compat constants per-test. Uses defined?-guards in the
-  # ensure block so a partial setup (e.g. exception between the two
-  # remove_const calls) doesn't mask the original error with a secondary
+  # Safe swap of MIN_PYTHON per-test. The defined?-guard in the ensure block
+  # keeps a failed setup from masking the original error with a secondary
   # NameError.
-  def with_range(min, max)
+  def with_min(min)
     orig_min = MCPforSketchUp::Core::Compat::MIN_PYTHON
-    orig_max = MCPforSketchUp::Core::Compat::MAX_PYTHON
     MCPforSketchUp::Core::Compat.send(:remove_const, :MIN_PYTHON)
-    MCPforSketchUp::Core::Compat.send(:remove_const, :MAX_PYTHON)
     MCPforSketchUp::Core::Compat.const_set(:MIN_PYTHON, min)
-    MCPforSketchUp::Core::Compat.const_set(:MAX_PYTHON, max)
     yield
   ensure
     if MCPforSketchUp::Core::Compat.const_defined?(:MIN_PYTHON, false)
       MCPforSketchUp::Core::Compat.send(:remove_const, :MIN_PYTHON)
     end
-    if MCPforSketchUp::Core::Compat.const_defined?(:MAX_PYTHON, false)
-      MCPforSketchUp::Core::Compat.send(:remove_const, :MAX_PYTHON)
-    end
     MCPforSketchUp::Core::Compat.const_set(:MIN_PYTHON, orig_min) if defined?(orig_min)
-    MCPforSketchUp::Core::Compat.const_set(:MAX_PYTHON, orig_max) if defined?(orig_max)
   end
 
   def test_at_min_passes
-    with_range("0.1.0", "0.2.0") do
+    with_min("0.1.0") do
       MCPforSketchUp::Core::Compat.check_python_version("0.1.0")  # no raise
     end
   end
 
-  def test_at_max_passes
-    with_range("0.1.0", "0.2.0") do
-      MCPforSketchUp::Core::Compat.check_python_version("0.2.0")
+  # No upper bound: a client released after this plugin (a Python-only
+  # hotfix) passes — the newer side of a pair decides.
+  def test_newer_client_accepted
+    with_min("0.1.0") do
+      MCPforSketchUp::Core::Compat.check_python_version("99.0.0")  # no raise
     end
   end
 
   def test_too_old_raises_with_upgrade_hint
-    with_range("0.1.0", "0.2.0") do
+    with_min("0.1.0") do
       err = assert_raises(MCPforSketchUp::Core::StructuredError) do
         MCPforSketchUp::Core::Compat.check_python_version("0.0.3")
       end
       assert_equal(-32001, err.code)
       assert_includes err.message, "0.0.3"
       assert_includes err.message, "too old"
-      assert_includes err.message, "uv pip install --upgrade"
-    end
-  end
-
-  def test_too_new_points_forward_and_backward
-    with_range("0.1.0", "0.2.0") do
-      err = assert_raises(MCPforSketchUp::Core::StructuredError) do
-        MCPforSketchUp::Core::Compat.check_python_version("0.3.0")
-      end
-      assert_equal(-32001, err.code)
-      assert_includes err.message, "0.3.0"
-      assert_includes err.message, "newer"
-      assert_includes err.message, ".rbz"
-      assert_includes err.message, "sketchup-mcp2==0.2.0",
-        "должен предлагать откат клиента на поддерживаемую версию"
-      assert_includes err.message, "newer plugin",
-        "должен указывать вперёд — на более новый .rbz, если он существует"
+      assert_includes err.message, "needs client v0.1.0 or newer"
+      assert_includes err.message, "uvx sketchup-mcp2@latest"
+      assert_includes err.message, "get_version"
     end
   end
 
@@ -102,6 +82,9 @@ class TestCompat < Minitest::Test
     end
     assert_equal(-32001, err.code)
     assert_includes err.message, "pre-dates"
+    # Review focus 5: both client-facing messages share one upgrade hint.
+    assert_includes err.message, "uvx sketchup-mcp2@latest",
+      "must carry the same upgrade hint as the too-old message"
   end
 
   def test_unparseable_raises_clear_message
@@ -111,21 +94,5 @@ class TestCompat < Minitest::Test
     assert_equal(-32001, err.code)
     assert_includes err.message, "unparseable"
     assert_includes err.message, "v1"
-  end
-
-  def test_min_le_max_invariant
-    min = MCPforSketchUp::Core::Compat.parse(MCPforSketchUp::Core::Compat::MIN_PYTHON)
-    max = MCPforSketchUp::Core::Compat.parse(MCPforSketchUp::Core::Compat::MAX_PYTHON)
-    assert (min <=> max) <= 0,
-      "MIN_PYTHON (#{min}) must be <= MAX_PYTHON (#{max})"
-  end
-
-  def test_max_python_matches_server_version
-    # Release-time forgot-to-bump catcher: when releasing version N,
-    # MAX_PYTHON == N == plugin SERVER_VERSION.
-    max = MCPforSketchUp::Core::Compat.parse(MCPforSketchUp::Core::Compat::MAX_PYTHON)
-    sv  = MCPforSketchUp::Core::Compat.parse(MCPforSketchUp::Core::Compat::SERVER_VERSION)
-    assert_equal sv, max,
-      "MAX_PYTHON (#{max}) must match plugin SERVER_VERSION (#{sv})"
   end
 end
