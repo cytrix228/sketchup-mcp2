@@ -91,7 +91,7 @@ cd mcp_for_sketchup && ruby package.rb && cd ..
 
 # Unit tests
 ruby test/run_all.rb           # Ruby (minitest; stdlib + rubyzip and a git checkout for the package test) — 416 runs / 1125 assertions
-uv run pytest tests/ -q        # Python (pytest) — 181 tests
+uv run pytest tests/ -q        # Python (pytest) — 182 tests
 
 # Live integration smoke-check (requires SketchUp running + plugin started)
 python examples/smoke_check.py # 25-step end-to-end (covers every tool category; 19 of 22 tools)

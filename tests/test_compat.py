@@ -118,6 +118,35 @@ def test_in_repo_pair_is_compatible():
     )
 
 
+# Every release up to 0.3.1 caps its counterpart at its own version, so no
+# 0.3.x build can pair with anything released later.
+_LAST_CAPPED_RELEASE = "0.3.1"
+
+
+def test_first_release_past_0_3_1_raises_floors():
+    """A side released past 0.3.1 must also raise its floor past 0.3.1.
+
+    No 0.3.x counterpart can pair with it anyway. The raised MIN_PYTHON makes
+    the plugin reject a 0.3.x client itself, with the
+    `uvx sketchup-mcp2@latest` hint, instead of letting the 0.3.x client
+    print its own `uv pip install --upgrade` advice, which does not refresh a
+    uvx install. Together with test_in_repo_pair_is_compatible this also
+    refuses a one-sided first release after 0.3.1."""
+    capped = compat.parse(_LAST_CAPPED_RELEASE)
+    server_version = _ruby_const("SERVER_VERSION")
+    min_python = _ruby_const("MIN_PYTHON")
+    if compat.parse(server_version) > capped:
+        assert compat.parse(min_python) > capped, (
+            f"plugin v{server_version} ships past {_LAST_CAPPED_RELEASE}: "
+            f"raise compat.rb MIN_PYTHON (now {min_python}) past it too"
+        )
+    if compat.parse(compat.CLIENT_VERSION) > capped:
+        assert compat.parse(compat.MIN_RUBY) > capped, (
+            f"client v{compat.CLIENT_VERSION} ships past {_LAST_CAPPED_RELEASE}: "
+            f"raise MIN_RUBY (now {compat.MIN_RUBY}) past it too"
+        )
+
+
 def test_python_version_matches_installed_metadata():
     """QUAL-03: старый тест сравнивал compat.CLIENT_VERSION с тем же атрибутом,
     из которого он импортирован, — тавтология. Настоящий guard: __version__

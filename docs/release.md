@@ -50,7 +50,7 @@ Bump only the side you ship:
 
 **Contract break of v0.3.0 (2026-07-02; batches 1+2, branch `fix/deep-review-p2`):** `transform_component.position` switched from a relative offset to an absolute bbox-min target (`feat!`, commit `6b7d133`), so an old/new client–server mix would pass the handshake but silently misplace geometry. Batch 2 widened the break with new tool parameters, stricter validation and changed response shapes. v0.3.0 raised both floors to `0.3.0`.
 
-**Releases up to 0.3.1 cap the counterpart at their own version.** An installed 0.3.0 plugin accepts only a 0.3.0 client, a 0.3.1 plugin accepts 0.3.0–0.3.1, and the 0.3.x clients mirror this. Every later release looks too new to them, so the first release after 0.3.1 must ship both sides — see the release-notes checklist in [§6](#6-git-tag--github-release).
+**Releases up to 0.3.1 cap the counterpart at their own version.** An installed 0.3.0 plugin accepts only a 0.3.0 client, a 0.3.1 plugin accepts 0.3.0–0.3.1, and the 0.3.x clients mirror this. Every later release looks too new to them, so the first release after 0.3.1 must ship both sides and raise both floors to its own version. No 0.3.x counterpart can pair with it anyway, and the raised `MIN_PYTHON` makes the new plugin reject a 0.3.x client itself, with the `uvx sketchup-mcp2@latest` hint, instead of leaving the 0.3.x client to print its own `uv pip install --upgrade` advice, which does not refresh a `uvx` install. `tests/test_compat.py::test_first_release_past_0_3_1_raises_floors` fails until both floors move; together with `test_in_repo_pair_is_compatible` it also refuses a one-sided first release. See the release-notes checklist in [§6](#6-git-tag--github-release).
 
 Commit (`chore: bump to vX.Y.Z`) and push.
 
@@ -140,7 +140,7 @@ gh release create vX.Y.Z \
 
 Release notes must say which side the release ships and the oldest counterpart it works with: "works with plugin ≥ vMIN_RUBY" for the client, "works with sketchup-mcp2 ≥ vMIN_PYTHON" for the plugin.
 
-**First release after 0.3.1 (one-time):** it ships both sides, and its notes must ask every user to upgrade both once — releases up to 0.3.1 accept only a counterpart of their own version (see [§1](#1-choose-the-scope-then-bump)). Give the client command explicitly: `uvx sketchup-mcp2@latest`, then restart the MCP client. The 0.3.x client's own hint, `uv pip install --upgrade sketchup-mcp2`, does not refresh a `uvx` install.
+**First release after 0.3.1 (one-time):** it ships both sides and raises both floors to its own version (see [§1](#1-choose-the-scope-then-bump)), and its notes must ask every user to upgrade both once — releases up to 0.3.1 accept only a counterpart of their own version. Give the client command explicitly: `uvx sketchup-mcp2@latest`, then restart the MCP client. The 0.3.x client's own hint, `uv pip install --upgrade sketchup-mcp2`, does not refresh a `uvx` install.
 
 Release notes must also call out anything a user upgrading in place would otherwise
 discover the hard way. For `0.3.1`:
