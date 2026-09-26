@@ -179,7 +179,12 @@ The Python server stays alive after this error; the next tool-call retries the c
 
 ### `IncompatibleVersionError`
 
-Your installed `sketchup-mcp2` Python package and the `.rbz` extension are outside the supported version range. Rebuild the `.rbz` from the same commit as the Python package, or `pip install -U sketchup-mcp2`. The current supported range lives in `src/sketchup_mcp/compat.py` and `mcp_for_sketchup/mcp_for_sketchup/core/compat.rb`.
+One side is older than the other accepts. The message names the outdated side and the minimum version it needs:
+
+- **Client too old** — upgrade the Python package: run `uvx sketchup-mcp2@latest` once (or `uv pip install -U sketchup-mcp2` for a pip install), then restart your MCP client. A plain `uvx sketchup-mcp2` keeps running its cached version.
+- **Plugin too old** — install the latest `.rbz` from [GitHub Releases](https://github.com/zinin/sketchup-mcp2/releases).
+
+Each side declares only the oldest counterpart it works with, so being newer never fails the handshake. Releases up to 0.3.1 are the exception: they accept only a counterpart of their own version, so moving past 0.3.1 means upgrading both once. The floors live in `src/sketchup_mcp/compat.py` (`MIN_RUBY`) and `mcp_for_sketchup/mcp_for_sketchup/core/compat.rb` (`MIN_PYTHON`).
 
 ### Tool-call timeouts on long operations
 

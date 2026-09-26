@@ -31,26 +31,32 @@ git status                              # tree should have no tracked-file modif
 
 If HEAD has diverged from `origin/master`, decide **rebase** vs **merge** before the bump commit.
 
-## 1. Bump version in 6 places (must match)
+## 1. Choose the scope, then bump
 
-- `pyproject.toml` — `version = "X.Y.Z"`
-- `src/sketchup_mcp/__init__.py` — `__version__ = "X.Y.Z"`
-- `src/sketchup_mcp/compat.py` — `MAX_RUBY = "X.Y.Z"` (and `MIN_RUBY` only if this release breaks wire/handler contract with the previous Ruby plugin)
-- `mcp_for_sketchup/package.rb` — `VERSION = 'X.Y.Z'`
-- `mcp_for_sketchup/mcp_for_sketchup.rb` — `ext.version = 'X.Y.Z'`
-- `mcp_for_sketchup/mcp_for_sketchup/core/compat.rb` — `SERVER_VERSION = "X.Y.Z"` and `MAX_PYTHON = "X.Y.Z"` (and `MIN_PYTHON` only if this release breaks wire/handler contract with the previous Python client)
+Releases share one version line. Each release takes the next number — patch for fixes, minor for features and contract breaks — whether it ships the Python package, the plugin, or both. The side a release does not ship keeps its version literals, so every `vX.Y.Z` tag stays unique.
 
-**MIN/MAX policy:** default to bumping only `MAX_*` to the new release; keep `MIN_*` pointing to the oldest counterpart this side still *accepts at the handshake*. Note that this is unilateral acceptance, not end-to-end interop: because each side's `MAX_*` is pinned to its own version (the two tests below), a pair only works when both versions are equal, whatever the floors say. `MIN_*` therefore controls which side reports the mismatch and what the error text claims — not which pairs can talk. Three invariant tests defend against typos and forgotten bumps:
+Bump only the side you ship:
 
-* `test_min_le_max_invariant` (Python + Ruby) — range cannot be empty.
-* `test_max_ruby_matches_python_version` (Python) — Python's view of Ruby max must equal current `CLIENT_VERSION` at release time.
-* `test_max_python_matches_server_version` (Ruby) — Ruby's view of Python max must equal plugin `SERVER_VERSION` at release time.
+- **Python** — `pyproject.toml` (`version = "X.Y.Z"`) and `src/sketchup_mcp/__init__.py` (`__version__ = "X.Y.Z"`). Then run `uv lock` to refresh `uv.lock` with the new project version; otherwise the next `uv` call updates it post-release and you end up with a stray `chore: sync uv.lock` commit.
+- **Plugin** — `mcp_for_sketchup/package.rb` (`VERSION = 'X.Y.Z'`), `mcp_for_sketchup/mcp_for_sketchup.rb` (`ext.version = 'X.Y.Z'`) and `mcp_for_sketchup/mcp_for_sketchup/core/compat.rb` (`SERVER_VERSION = "X.Y.Z"`).
 
-**Contract break — floors bumped in v0.3.0 (2026-07-02; batches 1+2, branch `fix/deep-review-p2`):** `transform_component.position` switched from a relative offset to an absolute bbox-min target (`feat!`, commit `6b7d133`): an old/new client–server mix would pass the handshake but silently misplace geometry. Batch 2 widened the same break — new tool parameters (`name`, `limit`/`offset`/`response_format`), stricter validation (min dimensions 0.1 mm for cube / 1.0 mm for curved types, dovetail angle ≤ 60°, non-zero scale), and changed response shapes (`list/find_components` pagination envelope, `bbox_mm: null` for empty bounds, screenshot metadata block, `export` warning field). v0.3.0 bumps **both MIN floors to `0.3.0`** (`MIN_RUBY` Python-side, `MIN_PYTHON` Ruby-side) — from that release the handshake was exact-match `0.3.0`↔`0.3.0`, so an incompatible mix is rejected at the handshake instead of silently misbehaving. Call out the new semantics in the GitHub release notes. `0.3.1` is packaging and copy only, so neither floor moved and both 0.3.1 artifacts declare `0.3.0..0.3.1` — but that does not make a mixed pair work: each side's `MAX_*` tracks its own release, so an installed 0.3.0 plugin rejects a 0.3.1 client at the handshake, and a 0.3.0 client rejects a 0.3.1 plugin. Ship the Python package and the `.rbz` as a pair.
+**Compatibility floors.** Each side declares only the oldest counterpart it works with: `MIN_RUBY` in `src/sketchup_mcp/compat.py`, `MIN_PYTHON` in `core/compat.rb`. There is no upper bound — the newer side of a pair knows what changed, so the newer side rejects the older one. Decide per release:
 
-Run `uv lock` to refresh `uv.lock` with the new project version (otherwise the next `uv` call updates it post-release and you end up with a stray `chore: sync uv.lock` commit). Commit (`chore: bump to vX.Y.Z`) and push.
+- A hotfix, or a feature with no new requirement, leaves both floors alone.
+- When one side starts to need a newer counterpart — say, a new Python tool calls a new Ruby handler — raise that side's floor to the first counterpart version that has what it needs.
+- A contract break (an existing message changes meaning or shape) ships both sides, and both floors rise to this release's version. Forget a floor here and an incompatible pair passes the handshake: the older side cannot stop it.
+
+`tests/test_compat.py::test_in_repo_pair_is_compatible` checks that the client and the plugin in the same commit accept each other.
+
+**Contract break of v0.3.0 (2026-07-02; batches 1+2, branch `fix/deep-review-p2`):** `transform_component.position` switched from a relative offset to an absolute bbox-min target (`feat!`, commit `6b7d133`), so an old/new client–server mix would pass the handshake but silently misplace geometry. Batch 2 widened the break with new tool parameters, stricter validation and changed response shapes. v0.3.0 raised both floors to `0.3.0`.
+
+**Releases up to 0.3.1 cap the counterpart at their own version.** An installed 0.3.0 plugin accepts only a 0.3.0 client, a 0.3.1 plugin accepts 0.3.0–0.3.1, and the 0.3.x clients mirror this. Every later release looks too new to them, so the first release after 0.3.1 must ship both sides and raise both floors to its own version. No 0.3.x counterpart can pair with it anyway, and the raised `MIN_PYTHON` makes the new plugin reject a 0.3.x client itself, with the `uvx sketchup-mcp2@latest` hint, instead of leaving the 0.3.x client to print its own `uv pip install --upgrade` advice, which does not refresh a `uvx` install. `tests/test_compat.py::test_first_release_past_0_3_1_raises_floors` fails until both floors move; together with `test_in_repo_pair_is_compatible` it also refuses a one-sided first release. See the release-notes checklist in [§6](#6-git-tag--github-release).
+
+Commit (`chore: bump to vX.Y.Z`) and push.
 
 ## 2. Pre-flight tests
+
+Run both suites for every release, one-sided ones included: the client and the plugin in this commit must stay a working pair.
 
 ```bash
 uv run pytest tests/ -q          # Python — must be green
@@ -59,16 +65,24 @@ ruby test/run_all.rb             # Ruby — must be green
 
 ## 3. Build artifacts
 
+Build only the side you ship:
+
 ```bash
-rm -rf dist/ mcp_for_sketchup/*.rbz
+# Python
+rm -rf dist/
 uv build                                              # → dist/*.whl + dist/*.tar.gz
 uvx twine check dist/*                                # validate metadata / README rendering
+
+# Plugin
+rm -f mcp_for_sketchup/*.rbz
 (cd mcp_for_sketchup && ruby package.rb)   # → mcp_for_sketchup_vX.Y.Z.rbz
 ```
 
 `package.rb` needs the `rubyzip` gem: `gem install --user-install rubyzip`.
 
 ## 4. TestPyPI rehearsal
+
+Python releases only.
 
 ```bash
 uvx twine upload --repository testpypi dist/*
@@ -91,6 +105,8 @@ rm -rf /tmp/verify
 
 ## 5. Production PyPI
 
+Python releases only.
+
 ```bash
 uvx twine upload dist/*
 ```
@@ -99,7 +115,16 @@ uvx twine upload dist/*
 
 ## 6. Git tag + GitHub Release
 
-Attach the `.rbz` (see [§3](#3-build-artifacts)) plus the Python wheel/sdist. The `.rbz` must already be self-signed via the [Trimble signing service](https://extensions.sketchup.com/developer/sign-extension) — an unsigned extension is flagged as unidentified, and SketchUp blocks it outright under the strictest loading policy (*Identified Extensions Only*).
+Every release carries the current artifacts of **both** sides, so the latest release page always offers the plugin and the client — the handshake error messages send users there. Attach what you built in [§3](#3-build-artifacts), and re-attach the unchanged side's files from the previous release (`vPREV`):
+
+```bash
+# Python-only release: the current signed plugin
+rm -f mcp_for_sketchup/*.rbz && gh release download vPREV -p '*-signed.rbz' -D mcp_for_sketchup
+# Plugin-only release: the current wheel + sdist
+rm -rf dist/ && gh release download vPREV -p 'sketchup_mcp2-*' -D dist
+```
+
+The `.rbz` must already be self-signed via the [Trimble signing service](https://extensions.sketchup.com/developer/sign-extension) — an unsigned extension is flagged as unidentified, and SketchUp blocks it outright under the strictest loading policy (*Identified Extensions Only*).
 
 **The service hands back a different file from the one you upload.** It appends a `-signed` suffix to the name and encrypts every `.rb` under the extension folder to `.rbe`, adding `mcp_for_sketchup.susig`; the root loader and `settings.html` stay in the clear, and `main.rb`'s `LOAD_ORDER` names paths without an extension precisely so `Sketchup.require` picks up the `.rbe`. Attach **that** file. The unsuffixed artifact §3 produced is the unsigned one and must not be published:
 
@@ -108,12 +133,16 @@ git tag vX.Y.Z -m "Release X.Y.Z" && git push origin vX.Y.Z
 gh release create vX.Y.Z \
   --title "vX.Y.Z" \
   --notes "..." \
-  dist/sketchup_mcp2-X.Y.Z-py3-none-any.whl \
-  dist/sketchup_mcp2-X.Y.Z.tar.gz \
-  mcp_for_sketchup/mcp_for_sketchup_vX.Y.Z-signed.rbz
+  dist/sketchup_mcp2-*-py3-none-any.whl \
+  dist/sketchup_mcp2-*.tar.gz \
+  mcp_for_sketchup/mcp_for_sketchup_v*-signed.rbz
 ```
 
-Release notes must call out anything a user upgrading in place would otherwise
+Release notes must say which side the release ships and the oldest counterpart it works with: "works with plugin ≥ vMIN_RUBY" for the client, "works with sketchup-mcp2 ≥ vMIN_PYTHON" for the plugin.
+
+**First release after 0.3.1 (one-time):** it ships both sides and raises both floors to its own version (see [§1](#1-choose-the-scope-then-bump)), and its notes must ask every user to upgrade both once — releases up to 0.3.1 accept only a counterpart of their own version. Give the client command explicitly: `uvx sketchup-mcp2@latest`, then restart the MCP client. The 0.3.x client's own hint, `uv pip install --upgrade sketchup-mcp2`, does not refresh a `uvx` install.
+
+Release notes must also call out anything a user upgrading in place would otherwise
 discover the hard way. For `0.3.1`:
 
 - `eval_ruby` now ships **enabled by default**; close the gate by unchecking
@@ -131,7 +160,7 @@ discover the hard way. For `0.3.1`:
   is the one case a user cannot discover by reading their own settings.
 - The Python package and the `.rbz` must be upgraded **together**: an installed
   0.3.0 plugin rejects a 0.3.1 client at the handshake (`-32001`), and a 0.3.0
-  client rejects a 0.3.1 plugin (see [§1](#1-bump-version-in-6-places-must-match)).
+  client rejects a 0.3.1 plugin (see [§1](#1-choose-the-scope-then-bump)).
 
 ## Notes
 

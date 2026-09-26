@@ -15,7 +15,8 @@ class TestSystem < Minitest::Test
     assert_kind_of Hash, result
     assert_equal MCPforSketchUp::Core::Compat::SERVER_VERSION,    result[:ruby_version]
     assert_equal MCPforSketchUp::Core::Compat::MIN_PYTHON,      result[:min_compatible_python]
-    assert_equal MCPforSketchUp::Core::Compat::MAX_PYTHON,      result[:max_compatible_python]
+    assert_equal %i[min_compatible_python ruby_version], result.keys.sort,
+      "no upper bound: get_version must not advertise max_compatible_python"
   end
 
   def test_get_version_ignores_params

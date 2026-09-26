@@ -1,13 +1,11 @@
 # test/test_version_pair.rb
-# T-21: у релиза четыре Ruby-литерала версии, правящихся вручную, —
-# package.rb VERSION, ext.version в загрузчике mcp_for_sketchup.rb,
-# Core::Compat::SERVER_VERSION и Core::Compat::MAX_PYTHON (docs/release.md §1
-# предписывает править последние два вместе). Разъезд любой пары даёт .rbz с
-# противоречивой самоидентификацией, и все четыре замкнуты на тестовом
+# T-21: у релиза плагина три Ruby-литерала версии, правящихся вручную, —
+# package.rb VERSION, ext.version в загрузчике mcp_for_sketchup.rb и
+# Core::Compat::SERVER_VERSION (docs/release.md §1). Разъезд любой пары даёт
+# .rbz с противоречивой самоидентификацией, и все три замкнуты на тестовом
 # прогоне: здесь сверяются package.rb VERSION и SERVER_VERSION; загрузчик —
 # транзитивно, через post-build-проверку внутри package.rb, которую запускает
-# тест сборки; MAX_PYTHON — через test/test_compat.rb::
-# test_max_python_matches_server_version. Python-сторона закрыта зеркальным
+# тест сборки. Python-сторона закрыта зеркальным
 # tests/test_compat.py::test_python_version_matches_installed_metadata.
 require "minitest/autorun"
 

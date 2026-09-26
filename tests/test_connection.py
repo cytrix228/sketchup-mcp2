@@ -556,7 +556,7 @@ async def test_get_connection_cold_start_race_creates_singleton_once(monkeypatch
     hello_ok_frame = encode_response({
         "jsonrpc": "2.0",
         "id": 0,
-        "result": {"server_version": compat.MAX_RUBY, "client_id": 0},
+        "result": {"server_version": compat.MIN_RUBY, "client_id": 0},
     })
 
     async def slow_open(*_args, **_kwargs):
@@ -789,12 +789,44 @@ class FakeServerMulti:
 
 
 async def test_handshake_happy_path_populates_server_version_and_client_id():
-    script = [hello_success(compat.MAX_RUBY, client_id=7)]
+    script = [hello_success(compat.MIN_RUBY, client_id=7)]
     async with FakeServer(script) as fs:
         conn = SketchUpConnection(host=fs.host, port=fs.port, timeout=2.0)
         await conn.connect()
-        assert conn._server_version == compat.MAX_RUBY
+        assert conn._server_version == compat.MIN_RUBY
         assert conn._client_id == 7
+        await conn.disconnect()
+
+
+async def test_handshake_accepts_plugin_newer_than_client():
+    """No upper bound: a plugin released after this client (a plugin-only
+    hotfix) completes the handshake."""
+    script = [hello_success("99.0.0", client_id=3)]
+    async with FakeServer(script) as fs:
+        conn = SketchUpConnection(host=fs.host, port=fs.port, timeout=2.0)
+        await conn.connect()
+        assert conn._server_version == "99.0.0"
+        assert conn._client_id == 3
+        await conn.disconnect()
+
+
+async def test_handshake_ignores_extra_result_fields():
+    """Review focus 4: a future plugin may add fields to the hello result;
+    the client must still connect."""
+    body = json.dumps({
+        "jsonrpc": "2.0",
+        "result": {
+            "server_version": compat.MIN_RUBY,
+            "client_id": 5,
+            "server_package_version": "99.0.0",
+        },
+        "id": 0,
+    }).encode("utf-8")
+    async with FakeServer([encode_frame(body)]) as fs:
+        conn = SketchUpConnection(host=fs.host, port=fs.port, timeout=2.0)
+        await conn.connect()
+        assert conn._server_version == compat.MIN_RUBY
+        assert conn._client_id == 5
         await conn.disconnect()
 
 
@@ -816,7 +848,7 @@ async def test_handshake_generic_error_raises_sketchup_error():
 
 
 async def test_connect_sends_hello_first_with_client_version():
-    script = [hello_success(compat.MAX_RUBY)]
+    script = [hello_success(compat.MIN_RUBY)]
     async with FakeServer(script) as fs:
         conn = SketchUpConnection(host=fs.host, port=fs.port, timeout=2.0)
         await conn.connect()
@@ -847,7 +879,7 @@ async def test_send_once_does_not_include_client_version():
         "result": {"content": [{"type": "text", "text": "ok"}], "isError": False},
         "id": 1,
     }).encode("utf-8"))
-    script = [hello_success(compat.MAX_RUBY), tool_reply]
+    script = [hello_success(compat.MIN_RUBY), tool_reply]
     async with FakeServer(script) as fs:
         conn = SketchUpConnection(host=fs.host, port=fs.port, timeout=2.0)
         await conn.connect()
@@ -892,7 +924,7 @@ async def test_send_once_does_not_require_server_version_in_response():
         "result": {"content": [{"type": "text", "text": "ok"}], "isError": False},
         "id": 1,
     }).encode("utf-8"))
-    script = [hello_success(compat.MAX_RUBY), tool_reply]
+    script = [hello_success(compat.MIN_RUBY), tool_reply]
     async with FakeServer(script) as fs:
         conn = SketchUpConnection(host=fs.host, port=fs.port, timeout=2.0)
         await conn.connect()
@@ -911,9 +943,9 @@ async def test_stale_socket_retry_redoes_handshake():
     async with FakeServerMulti([
         # client 1: handshake then close (simulates Ruby server-side close
         # — explicit stop, half-open detection, OS RST, etc.)
-        ([hello_success(compat.MAX_RUBY)], True),
+        ([hello_success(compat.MIN_RUBY)], True),
         # client 2: handshake; stay open to accept tool/call, then reply
-        ([hello_success(compat.MAX_RUBY), tool_reply], False),
+        ([hello_success(compat.MIN_RUBY), tool_reply], False),
     ]) as fs:
         conn = SketchUpConnection(host=fs.host, port=fs.port, timeout=2.0)
         await conn.connect()

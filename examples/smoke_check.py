@@ -5,8 +5,8 @@ Pre-conditions:
   1. SketchUp 2026+ is running with an empty model (step 19 uses the
      viewport-screenshot tool, verified on SketchUp 2026 only).
   2. Ruby SketchUp plugin is installed and started via Plugins → MCP Server →
-     Start. The plugin version must satisfy the handshake range declared in
-     src/sketchup_mcp/compat.py (MIN_RUBY..MAX_RUBY); step 25 verifies this.
+     Start. The plugin version must be at least MIN_RUBY from
+     src/sketchup_mcp/compat.py; step 25 verifies this.
   3. Run with the same Python venv used by the MCP server.
   4. Optional: SKETCHUP_MCP_HOST / SKETCHUP_MCP_PORT to override 127.0.0.1:9876.
      When SketchUp runs remotely, step 18 (export_scene) degrades to asserting
@@ -324,23 +324,22 @@ async def main() -> int:
         step = 24; print(f"[{step}] undo — verify the tool runs without error")
         await call(conn, "undo")
 
-        step = 25; print(f"[{step}] version handshake — matched pair must report compatible=true")
+        step = 25; print(f"[{step}] version handshake — in-repo pair must report compatible=true")
         # smoke_check.py talks to Ruby directly (no FastMCP), so this returns
         # the raw handlers/system.rb output. Replicate the two-way verdict
-        # that src/sketchup_mcp/tools.py::get_version computes.
+        # that src/sketchup_mcp/tools.py::get_version computes: each side's
+        # floor must admit the other; there is no upper bound.
         ruby_payload = parse(await call(conn, "get_version"))
         ruby_version = ruby_payload["ruby_version"]
         ruby_min_py = ruby_payload["min_compatible_python"]
-        ruby_max_py = ruby_payload["max_compatible_python"]
         print(f"    python={compat.CLIENT_VERSION} ruby={ruby_version}")
-        print(f"    ruby advertises python compat: {ruby_min_py}..{ruby_max_py}")
+        print(f"    ruby needs python >= {ruby_min_py}")
         compat.check_ruby_version(ruby_version)
-        client = compat.parse(compat.CLIENT_VERSION)
-        assert compat.parse(ruby_min_py) <= client <= compat.parse(ruby_max_py), (
-            f"Ruby advertised range {ruby_min_py}..{ruby_max_py} rejects "
-            f"client {compat.CLIENT_VERSION}"
+        assert compat.parse(ruby_min_py) <= compat.parse(compat.CLIENT_VERSION), (
+            f"plugin v{ruby_version} requires client >= {ruby_min_py}, "
+            f"this is {compat.CLIENT_VERSION}"
         )
-        print("    matched-pair: compatible=true")
+        print("    in-repo pair: compatible=true")
 
         print("\nALL STEPS PASSED ✓")
         skips = (f", {eval_skipped[0]} skipped (eval gate closed)"

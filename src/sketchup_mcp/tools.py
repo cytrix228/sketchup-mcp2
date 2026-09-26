@@ -809,17 +809,15 @@ async def get_version(ctx: Context) -> str:
     Useful as a runtime sanity probe — always returns a payload, even
     when the connection or other tools surface errors. The result is a
     JSON string with fields: python_version, ruby_version,
-    min_compatible_ruby, max_compatible_ruby, ruby_min_compatible_python,
-    ruby_max_compatible_python, compatible (bool), error (string | null).
+    min_compatible_ruby, ruby_min_compatible_python, compatible (bool),
+    error (string | null).
     """
-    def _payload(ruby_version, ruby_min, ruby_max, compatible, error_msg):
+    def _payload(ruby_version, ruby_min, compatible, error_msg):
         return json.dumps({
             "python_version": compat.CLIENT_VERSION,
             "ruby_version": ruby_version,
             "min_compatible_ruby": compat.MIN_RUBY,
-            "max_compatible_ruby": compat.MAX_RUBY,
             "ruby_min_compatible_python": ruby_min,
-            "ruby_max_compatible_python": ruby_max,
             "compatible": compatible,
             "error": error_msg,
         })
@@ -827,7 +825,7 @@ async def get_version(ctx: Context) -> str:
     try:
         raw = await _raw_call(ctx, "get_version")
     except ConnectionError as e:
-        return _payload(None, None, None, False,
+        return _payload(None, None, False,
                         f"SketchUp not running or extension not started: {e}")
     except SketchUpError as e:
         # Covers old Ruby returning -32601 "unknown tool: get_version"
@@ -835,7 +833,7 @@ async def get_version(ctx: Context) -> str:
         # validated once at connect-time in ``_handshake``; once a
         # connection survives that, tool-level errors here come from the
         # Ruby handler itself (not from per-request version checks).
-        return _payload(None, None, None, False, str(e))
+        return _payload(None, None, False, str(e))
 
     # Defensive parse: any unexpected shape (missing keys, non-list content,
     # non-string text, invalid JSON, non-dict payload) must STILL produce a
@@ -849,13 +847,16 @@ async def get_version(ctx: Context) -> str:
                 f"ruby payload is {type(ruby_payload).__name__}, expected dict"
             )
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as e:
-        return _payload(None, None, None, False,
+        return _payload(None, None, False,
                         f"unexpected get_version response shape: {e}")
     ruby_version = ruby_payload.get("ruby_version")
+    # Plugins up to 0.3.1 also send max_compatible_python. Ignore it: those
+    # plugins reject any newer client at the handshake, so a client that got
+    # this far is inside their range anyway.
     ruby_min = ruby_payload.get("min_compatible_python")
-    ruby_max = ruby_payload.get("max_compatible_python")
 
-    # Two-way compatibility: BOTH sides' tables must accept the counterpart.
+    # Two-way compatibility: each side's floor must admit the counterpart.
+    # There is no upper bound — the newer side of a pair decides.
     try:
         compat.check_ruby_version(ruby_version)
         python_accepts_ruby, py_error = True, None
@@ -863,24 +864,19 @@ async def get_version(ctx: Context) -> str:
         python_accepts_ruby, py_error = False, str(e)
 
     try:
-        ruby_accepts_python = bool(
-            ruby_min and ruby_max and
-            compat.parse(ruby_min)
-            <= compat.parse(compat.CLIENT_VERSION)
-            <= compat.parse(ruby_max)
+        ruby_accepts_python = (
+            compat.parse(ruby_min) <= compat.parse(compat.CLIENT_VERSION)
+        )
+        ruby_error = None if ruby_accepts_python else (
+            f"SketchUp plugin v{ruby_version} requires sketchup-mcp2 "
+            f"v{ruby_min} or newer."
         )
     except ValueError:
         ruby_accepts_python = False
+        ruby_error = (
+            f"SketchUp plugin v{ruby_version} sent no valid "
+            f"min_compatible_python ({ruby_min!r})."
+        )
 
     compatible = python_accepts_ruby and ruby_accepts_python
-    if py_error:
-        error_msg = py_error
-    elif not ruby_accepts_python:
-        error_msg = (
-            f"SketchUp plugin advertises Python compatibility "
-            f"{ruby_min}..{ruby_max}, which excludes v{compat.CLIENT_VERSION}."
-        )
-    else:
-        error_msg = None
-
-    return _payload(ruby_version, ruby_min, ruby_max, compatible, error_msg)
+    return _payload(ruby_version, ruby_min, compatible, py_error or ruby_error)

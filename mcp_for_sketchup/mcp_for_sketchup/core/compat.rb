@@ -6,8 +6,24 @@ module MCPforSketchUp
       # shadowing Ruby's global `::RUBY_VERSION` (the interpreter version).
       # This is the SketchUp PLUGIN version, bumped at release time.
       SERVER_VERSION = "0.3.1"
+
+      # Oldest sketchup-mcp2 client this plugin works with — mirror of
+      # compat.py::MIN_RUBY. There is no upper bound: the newer side of a pair
+      # knows what changed, so the newer side rejects the older one. Moves only
+      # when this plugin needs a newer client (a contract break raises both
+      # floors to that release, as in 0.3.0; a one-sided requirement raises this
+      # one alone). A hotfix leaves it put. Releases up to 0.3.1 still cap the
+      # counterpart at their own version, so the first release under this rule
+      # ships both sides.
       MIN_PYTHON   = "0.3.0"
-      MAX_PYTHON   = "0.3.1"
+
+      # Shared by every message that tells the user to upgrade the client.
+      # `uvx` — the setup README documents — keeps running its cached version
+      # until asked for `@latest`; the pip command covers pip installs.
+      UPGRADE_CLIENT_HINT =
+        "Upgrade the client: run `uvx sketchup-mcp2@latest` once " \
+        "(or `uv pip install --upgrade sketchup-mcp2` for a pip install), " \
+        "then restart the MCP client."
 
       PART_RE = /\A[0-9]+\z/.freeze
 
@@ -28,7 +44,7 @@ module MCPforSketchUp
       end
 
       # Raise MCPforSketchUp::Core::StructuredError(-32001) if client_version is nil,
-      # unparseable, or outside [MIN_PYTHON, MAX_PYTHON].
+      # unparseable, or older than MIN_PYTHON. A newer client always passes.
       def self.check_python_version(client_version)
         if client_version.nil?
           raise MCPforSketchUp::Core::StructuredError.new(-32001, msg_python_missing)
@@ -44,44 +60,24 @@ module MCPforSketchUp
           )
         end
         min = parse(MIN_PYTHON)
-        max = parse(MAX_PYTHON)
         if (cv <=> min) < 0
           raise MCPforSketchUp::Core::StructuredError.new(-32001, msg_python_too_old(client_version))
         end
-        if (cv <=> max) > 0
-          raise MCPforSketchUp::Core::StructuredError.new(-32001, msg_python_too_new(client_version))
-        end
       end
 
-      # Names MAX_PYTHON alone, never the MIN..MAX range — mirror of
-      # compat.py::_msg_ruby_too_old, see the comment there. The range is what
-      # THIS side accepts; printed to a human it reads as «any of these will
-      # work», and none but MAX will, because the counterpart's own MAX cuts
-      # the pair from the other side. MIN_PYTHON stays put: it records the
-      # 0.3.0 contract break.
+      # Names the floor — mirror of compat.py::_msg_ruby_too_old. With no upper
+      # bound, any client at or above MIN_PYTHON works.
       def self.msg_python_too_old(cv)
         "sketchup-mcp2 v#{cv} is too old for SketchUp plugin v#{SERVER_VERSION} " \
-        "(which works only with client v#{MAX_PYTHON}). Handshake rejected. " \
-        "Run: uv pip install --upgrade sketchup-mcp2. " \
-        "Call `get_version` to inspect handshake state."
-      end
-
-      def self.msg_python_too_new(cv)
-        # T-14: MAX_PYTHON == SERVER_VERSION, поэтому прежний совет
-        # «Reinstall …v#{MAX_PYTHON}…» предлагал переустановить уже
-        # установленную версию плагина. Указываем в обе стороны.
-        "sketchup-mcp2 v#{cv} is newer than SketchUp plugin v#{SERVER_VERSION} " \
-        "supports (max v#{MAX_PYTHON}). Handshake rejected. " \
-        "Either install a newer plugin .rbz from the GitHub releases page " \
-        "(if one exists for v#{cv}), or downgrade the client: " \
-        "uv pip install sketchup-mcp2==#{MAX_PYTHON}. " \
+        "(needs client v#{MIN_PYTHON} or newer). Handshake rejected. " \
+        "#{UPGRADE_CLIENT_HINT} " \
         "Call `get_version` to inspect handshake state."
       end
 
       def self.msg_python_missing
         "sketchup-mcp2 client pre-dates version-compat checking. " \
         "Handshake rejected. " \
-        "Run: uv pip install --upgrade sketchup-mcp2. " \
+        "#{UPGRADE_CLIENT_HINT} " \
         "Call `get_version` to inspect handshake state."
       end
     end

@@ -4,11 +4,11 @@ module MCPforSketchUp
     module System
       # Returns the Ruby-side compat metadata. Used by the MCP tool
       # `get_version` (Python wrapper computes the `compatible` flag).
+      # Only the floor: there is no upper bound on the client version.
       def self.get_version(_params)
         {
           ruby_version:           MCPforSketchUp::Core::Compat::SERVER_VERSION,
           min_compatible_python:  MCPforSketchUp::Core::Compat::MIN_PYTHON,
-          max_compatible_python:  MCPforSketchUp::Core::Compat::MAX_PYTHON,
         }
       end
     end
