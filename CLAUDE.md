@@ -56,15 +56,19 @@ MCP Server for SketchUp bridges Claude AI and SketchUp via the Model Context Pro
   (`--dangerously-skip-permissions`) operation.
 - **Version handshake (one-time on connect)**: every TCP connection MUST
   begin with a JSON-RPC `hello` request carrying
-  `params.client_version`. The server validates against
-  `core/compat.rb`'s `MIN_PYTHON`..`MAX_PYTHON` range and replies with
-  `{server_version, client_id}` in `result`. Mismatches return JSON-RPC
-  error `-32001` (`IncompatibleVersionError` on the Python side) and
-  the server closes the socket. After a successful handshake, regular
-  `tools/call` requests carry no `client_version` field and responses
-  carry no `server_version` field. Compatibility ranges live in
-  `src/sketchup_mcp/compat.py` and `mcp_for_sketchup/mcp_for_sketchup/core/compat.rb`.
-  `get_version` remains a regular tool returning the verdict payload.
+  `params.client_version`. The server rejects a client older than
+  `core/compat.rb`'s `MIN_PYTHON`; the client rejects a plugin older than
+  `compat.py`'s `MIN_RUBY`. There is **no upper bound**: the newer side of
+  a pair knows what changed, so it rejects the older one, and a
+  Python-only or plugin-only release talks to the installed counterpart.
+  The server replies with `{server_version, client_id}` in `result`.
+  Mismatches return JSON-RPC error `-32001` (`IncompatibleVersionError`
+  on the Python side) and the server closes the socket. After a
+  successful handshake, regular `tools/call` requests carry no
+  `client_version` field and responses carry no `server_version` field.
+  When to raise the floors: `docs/release.md` §1. Releases up to 0.3.1
+  still cap the counterpart at their own version. `get_version` remains a
+  regular tool returning the verdict payload.
 - **Literal source-guard tests**: `test/test_operation_names.rb`,
   `test/test_transform_absolute.rb`, `test/test_joints_frame_compensation.rb`
   pin exact handler source text (down to indentation) to protect invariants
@@ -86,8 +90,8 @@ uvx sketchup-mcp2             # production-style (from PyPI)
 cd mcp_for_sketchup && ruby package.rb && cd ..
 
 # Unit tests
-ruby test/run_all.rb           # Ruby (minitest; stdlib + rubyzip and a git checkout for the package test) — 417 runs / 1124 assertions
-uv run pytest tests/ -q        # Python (pytest) — 177 tests
+ruby test/run_all.rb           # Ruby (minitest; stdlib + rubyzip and a git checkout for the package test) — 416 runs / 1125 assertions
+uv run pytest tests/ -q        # Python (pytest) — 181 tests
 
 # Live integration smoke-check (requires SketchUp running + plugin started)
 python examples/smoke_check.py # 25-step end-to-end (covers every tool category; 19 of 22 tools)
@@ -138,7 +142,7 @@ JSON-RPC 2.0 envelopes; each MCP tool is a thin Python wrapper that builds a JSO
 | `config.py` | ENV-driven config |
 | `errors.py` | `SketchUpError` parsed from JSON-RPC error envelopes |
 | `server.py` | CLI entry point (`[project.scripts]` → `sketchup-mcp2`) |
-| `compat.py` | Single source of truth for Python↔Ruby version compatibility (MIN_RUBY, MAX_RUBY, check_ruby_version) |
+| `compat.py` | Single source of truth for Python↔Ruby version compatibility (MIN_RUBY, check_ruby_version) |
 
 `eval_ruby` is the escape hatch — passes arbitrary Ruby code straight through.
 
