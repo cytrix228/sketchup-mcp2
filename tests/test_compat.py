@@ -1,4 +1,7 @@
 """Tests for sketchup_mcp.compat — version parsing and Ruby compatibility check."""
+import re
+from pathlib import Path
+
 import pytest
 
 from sketchup_mcp import compat
@@ -47,36 +50,25 @@ def test_parse_non_string_raises():
 
 def test_at_min_passes(monkeypatch):
     monkeypatch.setattr(compat, "MIN_RUBY", "0.1.0")
-    monkeypatch.setattr(compat, "MAX_RUBY", "0.2.0")
     compat.check_ruby_version("0.1.0")
 
 
-def test_at_max_passes(monkeypatch):
+def test_newer_plugin_accepted(monkeypatch):
+    """No upper bound: a plugin released after this client (a plugin-only
+    hotfix) passes — the newer side of a pair decides."""
     monkeypatch.setattr(compat, "MIN_RUBY", "0.1.0")
-    monkeypatch.setattr(compat, "MAX_RUBY", "0.2.0")
-    compat.check_ruby_version("0.2.0")
+    compat.check_ruby_version("99.0.0")
 
 
 def test_too_old_raises_with_reinstall_hint(monkeypatch):
     monkeypatch.setattr(compat, "MIN_RUBY", "0.1.0")
-    monkeypatch.setattr(compat, "MAX_RUBY", "0.2.0")
     with pytest.raises(IncompatibleVersionError) as exc:
         compat.check_ruby_version("0.0.3")
     msg = str(exc.value)
     assert "0.0.3" in msg and "too old" in msg
-    assert "mcp_for_sketchup_v0.2.0.rbz" in msg  # names the one artifact we ship
+    assert "needs plugin v0.1.0 or newer" in msg  # names the floor
+    assert "latest mcp_for_sketchup .rbz" in msg
     assert "get_version" in msg  # diagnostic pointer
-
-
-def test_too_new_raises_with_upgrade_hint(monkeypatch):
-    monkeypatch.setattr(compat, "MIN_RUBY", "0.1.0")
-    monkeypatch.setattr(compat, "MAX_RUBY", "0.2.0")
-    with pytest.raises(IncompatibleVersionError) as exc:
-        compat.check_ruby_version("0.3.0")
-    msg = str(exc.value)
-    assert "0.3.0" in msg and "newer" in msg
-    assert "uv pip install --upgrade" in msg
-    assert "get_version" in msg
 
 
 def test_none_raises_with_pre_dates_hint():
@@ -84,7 +76,7 @@ def test_none_raises_with_pre_dates_hint():
         compat.check_ruby_version(None)
     msg = str(exc.value)
     assert "pre-dates" in msg
-    assert f"mcp_for_sketchup_v{compat.MAX_RUBY}.rbz" in msg
+    assert "latest mcp_for_sketchup .rbz" in msg
     assert "get_version" in msg
 
 
@@ -96,14 +88,34 @@ def test_unparseable_raises_clear_message():
     assert "v1" in msg
 
 
-def test_min_le_max_invariant():
-    """Sanity: declared range cannot be empty."""
-    assert compat.parse(compat.MIN_RUBY) <= compat.parse(compat.MAX_RUBY)
+_COMPAT_RB = (
+    Path(__file__).resolve().parent.parent
+    / "mcp_for_sketchup" / "mcp_for_sketchup" / "core" / "compat.rb"
+)
 
 
-def test_max_ruby_matches_python_version():
-    """Release-time forgot-to-bump catcher: when releasing N, MAX_RUBY == N."""
-    assert compat.parse(compat.MAX_RUBY) == compat.parse(compat.CLIENT_VERSION)
+def _ruby_const(name: str) -> str:
+    """Read a string constant such as ``SERVER_VERSION = "0.3.1"`` from compat.rb."""
+    source = _COMPAT_RB.read_text(encoding="utf-8")
+    m = re.search(rf'^\s*{name}\s*=\s*"([^"]*)"', source, re.M)
+    assert m, f"{name} not found in {_COMPAT_RB}"
+    return m.group(1)
+
+
+def test_in_repo_pair_is_compatible():
+    """The client and the plugin in this commit must accept each other.
+
+    Replaces the old MAX pinning tests: it catches a mistyped floor and a
+    floor that names a counterpart version this commit does not have yet."""
+    server_version = _ruby_const("SERVER_VERSION")
+    min_python = _ruby_const("MIN_PYTHON")
+    assert compat.parse(compat.MIN_RUBY) <= compat.parse(server_version), (
+        f"MIN_RUBY {compat.MIN_RUBY} rejects the in-repo plugin v{server_version}"
+    )
+    assert compat.parse(min_python) <= compat.parse(compat.CLIENT_VERSION), (
+        f"compat.rb MIN_PYTHON {min_python} rejects the in-repo client "
+        f"v{compat.CLIENT_VERSION}"
+    )
 
 
 def test_python_version_matches_installed_metadata():

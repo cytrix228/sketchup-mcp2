@@ -8,6 +8,38 @@ import pytest
 from sketchup_mcp import compat
 from sketchup_mcp.app import mcp
 
+PAYLOAD_KEYS = {
+    "python_version",
+    "ruby_version",
+    "min_compatible_ruby",
+    "ruby_min_compatible_python",
+    "compatible",
+    "error",
+}
+
+
+def _extract_payload(result) -> dict:
+    # FastMCP's call_tool returns (content_blocks, structured_dict).
+    # Extract text from the first content block.
+    blocks = result[0] if isinstance(result, tuple) else result
+    text = blocks[0].text if hasattr(blocks[0], "text") else blocks[0]["text"]
+    return json.loads(text)
+
+
+async def _get_version_with_ruby_payload(monkeypatch, ruby_payload: dict) -> dict:
+    """Run the tool against a mocked Ruby get_version response."""
+    from sketchup_mcp import tools
+
+    async def fake_raw_call(ctx, tool_name, /, **kwargs):
+        assert tool_name == "get_version"
+        return {
+            "content": [{"type": "text", "text": json.dumps(ruby_payload)}],
+            "isError": False,
+        }
+
+    monkeypatch.setattr(tools, "_raw_call", fake_raw_call)
+    return _extract_payload(await mcp.call_tool("get_version", {}))
+
 
 def test_get_version_is_registered():
     # FastMCP exposes the tool registry; the exact attribute name has
@@ -21,71 +53,45 @@ def test_get_version_is_registered():
 
 @pytest.mark.asyncio
 async def test_get_version_compatible_payload(monkeypatch):
-    """Mock the underlying _raw_call so the tool sees a Ruby response with
-    matched versions; result must report compatible=true, error=None."""
-    from sketchup_mcp import tools
-
-    async def fake_raw_call(ctx, tool_name, /, **kwargs):
-        assert tool_name == "get_version"
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "ruby_version": compat.MAX_RUBY,
-                    "min_compatible_python": compat.CLIENT_VERSION,
-                    "max_compatible_python": compat.CLIENT_VERSION,
-                }),
-            }],
-            "isError": False,
-        }
-
-    monkeypatch.setattr(tools, "_raw_call", fake_raw_call)
-    result = await mcp.call_tool("get_version", {})
-    # FastMCP's call_tool returns (content_blocks, structured_dict).
-    # Extract text from the first content block.
-    blocks = result[0] if isinstance(result, tuple) else result
-    text = blocks[0].text if hasattr(blocks[0], "text") else blocks[0]["text"]
-    payload = json.loads(text)
+    """A plugin at the client's floor that admits this client: compatible,
+    and the payload carries no max_* fields."""
+    payload = await _get_version_with_ruby_payload(monkeypatch, {
+        "ruby_version": compat.MIN_RUBY,
+        "min_compatible_python": compat.CLIENT_VERSION,
+    })
+    assert set(payload) == PAYLOAD_KEYS
     assert payload["python_version"] == compat.CLIENT_VERSION
-    assert payload["ruby_version"] == compat.MAX_RUBY
+    assert payload["ruby_version"] == compat.MIN_RUBY
+    assert payload["min_compatible_ruby"] == compat.MIN_RUBY
+    assert payload["ruby_min_compatible_python"] == compat.CLIENT_VERSION
     assert payload["compatible"] is True
     assert payload["error"] is None
-    assert payload["min_compatible_ruby"] == compat.MIN_RUBY
-    assert payload["max_compatible_ruby"] == compat.MAX_RUBY
+
+
+@pytest.mark.asyncio
+async def test_get_version_newer_plugin_is_compatible(monkeypatch):
+    """No upper bound: a plugin far newer than the client (a plugin-only
+    hotfix) is compatible as long as its floor admits the client."""
+    payload = await _get_version_with_ruby_payload(monkeypatch, {
+        "ruby_version": "99.0.0",
+        "min_compatible_python": compat.CLIENT_VERSION,
+    })
+    assert payload["compatible"] is True
+    assert payload["error"] is None
 
 
 @pytest.mark.asyncio
 async def test_get_version_incompatible_payload(monkeypatch):
-    """Mock Ruby response with ruby_version outside the supported range —
-    result must report compatible=false with descriptive error."""
-    from sketchup_mcp import tools
-
+    """A plugin older than MIN_RUBY: compatible=false, the error names the floor."""
     monkeypatch.setattr(compat, "MIN_RUBY", "1.0.0")
-    monkeypatch.setattr(compat, "MAX_RUBY", "1.0.0")
-
-    async def fake_raw_call(ctx, tool_name, /, **kwargs):
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "ruby_version": "0.0.3",
-                    "min_compatible_python": "0.0.3",
-                    "max_compatible_python": "0.0.3",
-                }),
-            }],
-            "isError": False,
-        }
-
-    monkeypatch.setattr(tools, "_raw_call", fake_raw_call)
-    result = await mcp.call_tool("get_version", {})
-    blocks = result[0] if isinstance(result, tuple) else result
-    text = blocks[0].text if hasattr(blocks[0], "text") else blocks[0]["text"]
-    payload = json.loads(text)
+    payload = await _get_version_with_ruby_payload(monkeypatch, {
+        "ruby_version": "0.0.3",
+        "min_compatible_python": "0.0.3",
+    })
     assert payload["compatible"] is False
     assert payload["ruby_version"] == "0.0.3"
     assert "too old" in payload["error"]
-    # Literal, not f-string: MAX_RUBY is monkeypatched to "1.0.0" above.
-    assert "mcp_for_sketchup_v1.0.0.rbz" in payload["error"]  # names the one artifact we ship
+    assert "needs plugin v1.0.0 or newer" in payload["error"]
 
 
 @pytest.mark.asyncio
@@ -98,10 +104,7 @@ async def test_get_version_handles_connection_error(monkeypatch):
         raise ConnectionError("not running")
 
     monkeypatch.setattr(tools, "_raw_call", failing_raw_call)
-    result = await mcp.call_tool("get_version", {})
-    blocks = result[0] if isinstance(result, tuple) else result
-    text = blocks[0].text if hasattr(blocks[0], "text") else blocks[0]["text"]
-    payload = json.loads(text)
+    payload = _extract_payload(await mcp.call_tool("get_version", {}))
     assert payload["python_version"] == compat.CLIENT_VERSION
     assert payload["ruby_version"] is None
     assert payload["compatible"] is False
@@ -121,10 +124,7 @@ async def test_get_version_returns_payload_on_unknown_tool_error(monkeypatch):
         raise SketchUpError(-32601, "unknown tool: get_version")
 
     monkeypatch.setattr(tools, "_raw_call", unknown_tool_raw_call)
-    result = await mcp.call_tool("get_version", {})
-    blocks = result[0] if isinstance(result, tuple) else result
-    text = blocks[0].text if hasattr(blocks[0], "text") else blocks[0]["text"]
-    payload = json.loads(text)
+    payload = _extract_payload(await mcp.call_tool("get_version", {}))
     assert payload["python_version"] == compat.CLIENT_VERSION
     assert payload["ruby_version"] is None
     assert payload["compatible"] is False
@@ -133,41 +133,58 @@ async def test_get_version_returns_payload_on_unknown_tool_error(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_two_way_compat_drift_detected(monkeypatch):
-    """Tables-drifted-in-opposite-directions edge case: Python's MIN_RUBY/
-    MAX_RUBY accepts the ruby_version that Ruby reports, BUT Ruby's
-    advertised min/max_compatible_python excludes CLIENT_VERSION.
-    Two-way verdict must catch this and report compatible=false with a
-    descriptive error about Ruby-side exclusion."""
-    from sketchup_mcp import tools
-
-    # Pin Python's view of Ruby so check_ruby_version("1.0.0") passes.
+    """Python's floor admits the plugin, but the plugin's floor
+    (min_compatible_python) is above this client. The two-way verdict must
+    report compatible=false and name the plugin's requirement."""
     monkeypatch.setattr(compat, "MIN_RUBY", "1.0.0")
-    monkeypatch.setattr(compat, "MAX_RUBY", "1.0.0")
-
-    async def fake_raw_call(ctx, tool_name, /, **kwargs):
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "ruby_version": "1.0.0",
-                    # Ruby's advertised Python range excludes CLIENT_VERSION —
-                    # that's the drift case.
-                    "min_compatible_python": "2.0.0",
-                    "max_compatible_python": "2.0.0",
-                }),
-            }],
-            "isError": False,
-        }
-
-    monkeypatch.setattr(tools, "_raw_call", fake_raw_call)
-    result = await mcp.call_tool("get_version", {})
-    blocks = result[0] if isinstance(result, tuple) else result
-    text = blocks[0].text if hasattr(blocks[0], "text") else blocks[0]["text"]
-    payload = json.loads(text)
-    # Python's local check accepts ruby_version=1.0.0; but Ruby's advertised
-    # range [2.0.0, 2.0.0] excludes CLIENT_VERSION → final verdict is false.
+    payload = await _get_version_with_ruby_payload(monkeypatch, {
+        "ruby_version": "1.0.0",
+        "min_compatible_python": "2.0.0",
+    })
     assert payload["compatible"] is False
     assert payload["ruby_version"] == "1.0.0"
-    assert "advertises" in payload["error"], \
-        f"error must mention Ruby's advertised range: {payload['error']!r}"
-    assert "2.0.0" in payload["error"]
+    assert payload["error"] == (
+        "SketchUp plugin v1.0.0 requires sketchup-mcp2 v2.0.0 or newer."
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_version_missing_min_compatible_python(monkeypatch):
+    """A plugin that advertises no floor: compatible=false, no exception."""
+    payload = await _get_version_with_ruby_payload(monkeypatch, {
+        "ruby_version": compat.MIN_RUBY,
+    })
+    assert payload["compatible"] is False
+    assert payload["error"] == (
+        f"SketchUp plugin v{compat.MIN_RUBY} sent no valid "
+        f"min_compatible_python (None)."
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_version_non_string_min_compatible_python(monkeypatch):
+    """Review focus 2: a non-string floor must not raise out of the tool."""
+    payload = await _get_version_with_ruby_payload(monkeypatch, {
+        "ruby_version": compat.MIN_RUBY,
+        "min_compatible_python": 3,
+    })
+    assert payload["compatible"] is False
+    assert payload["error"] == (
+        f"SketchUp plugin v{compat.MIN_RUBY} sent no valid "
+        f"min_compatible_python (3)."
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_version_ignores_released_plugin_max(monkeypatch):
+    """Review focus 1: plugins up to 0.3.1 also send max_compatible_python.
+    The tool ignores it — even a max that excludes this client — and never
+    echoes a max_* field."""
+    payload = await _get_version_with_ruby_payload(monkeypatch, {
+        "ruby_version": compat.MIN_RUBY,
+        "min_compatible_python": compat.CLIENT_VERSION,
+        "max_compatible_python": "0.0.1",
+    })
+    assert set(payload) == PAYLOAD_KEYS
+    assert payload["compatible"] is True
+    assert payload["error"] is None
