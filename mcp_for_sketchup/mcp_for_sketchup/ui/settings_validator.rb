@@ -49,7 +49,10 @@ module MCPforSketchUp
 
         eval_enabled = truthy?(payload["eval_enabled"])
         log_to_file  = truthy?(payload["log_to_file"])
-        log_path     = payload["log_file_path"].to_s
+        # Forward slashes only: Sketchup.write_default stores backslashes
+        # unescaped, and the next read_default fails to parse them (see
+        # Config.load_from_defaults!). Windows accepts "/" everywhere.
+        log_path     = payload["log_file_path"].to_s.tr("\\", "/")
 
         if log_to_file
           if log_path.empty?

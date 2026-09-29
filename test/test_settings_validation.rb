@@ -156,6 +156,13 @@ class TestSettingsValidator < Minitest::Test
     assert_equal "/tmp/x.log", result[:normalized][:log_file_path]
   end
 
+  def test_log_file_path_backslashes_normalized_to_forward_slashes
+    result = V.validate("host" => "127.0.0.1", "port" => "9876", "log_level" => "WARN",
+                        "log_to_file" => "false", "log_file_path" => "E:\\MyProject\\x.log")
+    assert result[:ok]
+    assert_equal "E:/MyProject/x.log", result[:normalized][:log_file_path]
+  end
+
   def test_log_to_file_true_requires_non_empty_path
     result = V.validate("host" => "127.0.0.1", "port" => "9876", "log_level" => "WARN",
                         "log_to_file" => "true", "log_file_path" => "")
