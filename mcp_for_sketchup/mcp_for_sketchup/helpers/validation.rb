@@ -143,6 +143,28 @@ module MCPforSketchUp
         return nil unless params.key?(key)
         require_string(params, key)
       end
+
+      # A list of entity IDs, each parsed like require_id. Duplicates are
+      # dropped (first occurrence wins) so a repeated id isn't processed twice.
+      def self.require_id_list(params, key, min: 1, max: 500)
+        v = params[key]
+        raise E.new(-32602, "missing required field: #{key}") if v.nil?
+        raise E.new(-32602, "field #{key} must be an array of IDs") unless v.is_a?(Array)
+        unless v.length.between?(min, max)
+          raise E.new(-32602, "field #{key} must hold #{min}..#{max} IDs, got #{v.length}")
+        end
+        v.each_index.map { |i| require_id({ "#{key}[#{i}]" => v[i] }, "#{key}[#{i}]") }.uniq
+      end
+
+      def self.optional_number_range(params, key, min:, max:, default:)
+        return default unless params.key?(key)
+        v = params[key]
+        raise E.new(-32602, "field #{key} must be a number, got #{v.inspect}") unless v.is_a?(Numeric)
+        unless v.between?(min, max)
+          raise E.new(-32602, "field #{key} must be in #{min}..#{max}, got #{v}")
+        end
+        v.to_f
+      end
     end
   end
 end

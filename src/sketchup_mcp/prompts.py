@@ -100,6 +100,24 @@ code, do not silently fall back to typed tools without telling the user
 that eval was unavailable. The user can enable Ruby evaluation in
 Plugins → MCP Server → Settings... — the checkbox is «Enable Ruby
 evaluation».
+
+# 9. Inspection tools — read before you write Ruby
+- Unsure where the user is? get_edit_context: the open group path,
+  selection and camera. While a group is open, SketchUp reports its
+  contents in world coordinates and selects only inside it.
+- Checking built geometry: solid_report(ids, children=true) gives faces,
+  manifold, volume and open edges per part; save_as / compare_with diff
+  a rebuild against the build before it. find_overlaps finds parts that
+  interpenetrate rather than touch.
+- Finding faces or points: query_faces (by direction, box, tag or
+  material, in world mm) and raycast, instead of eval_ruby.
+- Showing a part: capture_view(ids=[...]) isolates and frames it and
+  leaves the user's view as it was; select_entities points the user at
+  something.
+- Slow viewport: scene_stats (flattened face counts, heaviest
+  definitions) and profile_view (ms per frame).
+- Plugin development, behind the eval_ruby gate: eval_ruby_dry_run runs
+  code and rolls it back; reload_ruby hot-loads edited .rb files.
 """
 
 

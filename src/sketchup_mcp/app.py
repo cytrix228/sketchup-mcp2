@@ -58,4 +58,5 @@ mcp = FastMCP(
 # `sketchup-mcp2` CLI, `python -m sketchup_mcp`) would serve an EMPTY tool
 # list — registration happens at import time.
 import sketchup_mcp.tools  # noqa: E402, F401
+import sketchup_mcp.jini_tools  # noqa: E402, F401
 import sketchup_mcp.prompts  # noqa: E402, F401

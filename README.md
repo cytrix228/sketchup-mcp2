@@ -67,6 +67,9 @@ That's it. Ask Claude things like *"create a 1.2 × 0.8 m oak dining table"* and
 | **Introspection** | `get_model_info`, `list_components`, `get_component_info`, `find_components`, `list_layers`, `create_layer`, `get_selection`, `get_version` |
 | **View** | `get_viewport_screenshot` — captures the viewport as a PNG (returns an MCP `Image` + JSON metadata text block; optional `view_preset` / `style` / `zoom_extents`; **requires SketchUp 2026+**) |
 | **Lifecycle** | `undo` |
+| **Inspection** ([jini-tools](docs/jini-tools.md)) | `get_edit_context`, `solid_report`, `query_faces`, `find_overlaps`, `raycast`, `scene_stats`, `get_attributes` — read-only, world mm also while a group is open |
+| **Scene** ([jini-tools](docs/jini-tools.md)) | `select_entities`, `set_entity_properties`, `set_attributes`, `capture_view` (isolated, framed PNG; leaves the view as it was), `profile_view` (ms per frame) |
+| **Plugin development** ([jini-tools](docs/jini-tools.md)) | `eval_ruby_dry_run` (evaluate, then roll back), `reload_ruby` (hot-load `.rb` files) — behind the `eval_ruby` gate |
 | **Escape hatch** | `eval_ruby` — arbitrary Ruby inside SketchUp for anything not covered above. Enabled by default; close the gate in the Settings dialog — see [Configuration](#ruby-side-settings-dialog-inside-sketchup). |
 
 All dimensions in **millimeters**; angles in **degrees**. Every entity-returning handler also responds with `bbox_mm` so the LLM can re-locate entities by bounding box if their IDs go stale after destructive ops.

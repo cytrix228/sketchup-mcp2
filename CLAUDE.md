@@ -90,11 +90,11 @@ uvx sketchup-mcp2             # production-style (from PyPI)
 cd mcp_for_sketchup && ruby package.rb && cd ..
 
 # Unit tests
-ruby test/run_all.rb           # Ruby (minitest; stdlib + rubyzip and a git checkout for the package test) — 416 runs / 1125 assertions
-uv run pytest tests/ -q        # Python (pytest) — 182 tests
+ruby test/run_all.rb           # Ruby (minitest; stdlib + rubyzip and a git checkout for the package test) — 480 runs
+uv run pytest tests/ -q        # Python (pytest) — 237 tests
 
 # Live integration smoke-check (requires SketchUp running + plugin started)
-python examples/smoke_check.py # 25-step end-to-end (covers every tool category; 19 of 22 tools)
+python examples/smoke_check.py # 25-step end-to-end (19 of the 22 upstream tools; the 14 jini-tools were verified live as docs/jini-tools.md describes)
 ```
 
 Other example scripts in `examples/`: `smoke_multi_client.py` (multi-client load check).
@@ -137,6 +137,7 @@ JSON-RPC 2.0 envelopes; each MCP tool is a thin Python wrapper that builds a JSO
 |---|---|
 | `app.py`, `__main__.py` | FastMCP server entry point |
 | `tools.py` | One MCP tool wrapper per Ruby handler (FastMCP definitions) |
+| `jini_tools.py` | The 14 jini-tools wrappers — inspection, scene, plugin development ([docs/jini-tools.md](docs/jini-tools.md)) |
 | `prompts.py` | MCP prompt definitions (`sketchup_modeling_strategy`) |
 | `connection.py` | Persistent TCP socket, length-prefix framing, `asyncio.Lock` |
 | `config.py` | ENV-driven config |
@@ -152,8 +153,8 @@ JSON-RPC 2.0 envelopes; each MCP tool is a thin Python wrapper that builds a JSO
 |---|---|
 | `main.rb` (~70 lines) | Loads modules in order, registers Plugins → MCP Server menu |
 | `core/` | `application.rb`, `server.rb`, `client_state.rb`, `framing.rb`, `config.rb`, `compat.rb`, `logger.rb`, `errors.rb` |
-| `handlers/` | One file per tool group: `dispatch.rb`, `geometry.rb`, `operations.rb`, `joints.rb`, `materials.rb`, `export.rb`, `model.rb`, `eval.rb`, `view.rb`, `system.rb` |
-| `helpers/` | Shared utilities: `units.rb`, `validation.rb`, `entities.rb`, `geometry.rb` |
+| `handlers/` | One file per tool group: `dispatch.rb`, `geometry.rb`, `operations.rb`, `joints.rb`, `materials.rb`, `export.rb`, `model.rb`, `eval.rb`, `view.rb`, `system.rb`; jini-tools: `inspect.rb`, `scene.rb`, `devtools.rb` |
+| `helpers/` | Shared utilities: `units.rb`, `validation.rb`, `entities.rb`, `geometry.rb`; `mesh.rb` (pure geometry, no SketchUp API) and `space.rb` (world frames, including edit mode) for jini-tools |
 | `ui/` | Settings dialog: `settings_dialog.rb`, `settings_validator.rb`, `settings.html` |
 
 All created geometry lives inside SketchUp **Groups** so it can be selected/moved/deleted as a unit.

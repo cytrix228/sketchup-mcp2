@@ -58,6 +58,19 @@ _RETRY_SAFE_TOOLS: frozenset[str] = frozenset(
         "get_viewport_screenshot",  # read-only viewport capture; idempotent in
                                     # both restore_view modes (no document state changes)
         "get_version",              # read-only diagnostic; no side effects
+        # jini-tools (docs/jini-tools.md): reads only. capture_view and
+        # profile_view restore the camera and roll back their hiding, like
+        # get_viewport_screenshot. solid_report stays out: with save_as and
+        # compare_with on one label, a blind repeat would diff the new
+        # snapshot against itself and report no changes.
+        "get_edit_context",
+        "query_faces",
+        "find_overlaps",
+        "raycast",
+        "scene_stats",
+        "get_attributes",
+        "capture_view",
+        "profile_view",
     }
 )
 

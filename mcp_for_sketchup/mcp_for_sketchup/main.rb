@@ -23,6 +23,8 @@ module MCPforSketchUp
     helpers/validation
     helpers/entities
     helpers/geometry
+    helpers/mesh
+    helpers/space
     core/framing
     core/client_state
     handlers/dispatch
@@ -35,6 +37,9 @@ module MCPforSketchUp
     handlers/eval
     handlers/system
     handlers/view
+    handlers/inspect
+    handlers/scene
+    handlers/devtools
     core/server
     core/application
     ui/settings_validator
