@@ -32,13 +32,16 @@ module MCPforSketchUp
           @server = server_class.new
           @server.start
           @running = true
+          # The port bound, which is Config.port's next free one when another
+          # SketchUp holds it (see Server#bind_first_free).
+          port = (@server.respond_to?(:port) && @server.port) || Config.port
           @running_config = {
             host:      Config.host,
-            port:      Config.port,
+            port:      port,
             log_level: Config.log_level
           }.freeze
-          Sketchup.status_text = "MCP Server: running on #{Config.host}:#{Config.port}"
-          Logger.log_tool("application", "started", "host=#{Config.host} port=#{Config.port}")
+          Sketchup.status_text = "MCP Server: running on #{Config.host}:#{port}"
+          Logger.log_tool("application", "started", "host=#{Config.host} port=#{port}")
         rescue StandardError => e
           Logger.log_error("application.start", e)
           ::UI.messagebox("MCP Server failed to start:\n\n#{e.message}\n\n" \

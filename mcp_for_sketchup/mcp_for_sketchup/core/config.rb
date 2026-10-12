@@ -17,6 +17,10 @@ module MCPforSketchUp
 
       LEVELS           = { "DEBUG" => 0, "INFO" => 1, "WARN" => 2, "ERROR" => 3 }.freeze
       MAX_MESSAGE_SIZE = 64 * 1024 * 1024  # 64 MiB; matches Python side
+      # Ports tried from `port` on when it is taken: one SketchUp process per
+      # open model on Windows, each with its own server. Matches the Python
+      # side's SKETCHUP_MCP_PORT_SPAN default, which is where it looks.
+      PORT_SPAN        = 10
 
       # Validation primitives — kept locally so load_from_defaults! has no
       # dependency on ui/settings_validator (which is loaded later). The dialog

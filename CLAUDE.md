@@ -15,7 +15,8 @@ MCP Server for SketchUp bridges Claude AI and SketchUp via the Model Context Pro
 - **`Group#subtract` is reversed**: `A.subtract(B)` returns `B - A`. To get «target minus tool», call `tool.subtract(target)`. Verified empirically against SketchUp 2026.
 - **SketchUp is single-threaded**: the Ruby extension cannot use threads; all I/O runs in `UI.start_timer` callbacks.
 - **Wire protocol** (v0.0.1+): 4-byte big-endian length-prefix framing, 64 MiB cap.
-- **Persistent socket**: Python server holds one TCP connection; `asyncio.Lock` serializes tool-calls. Ruby reads non-blocking inside `UI.start_timer`, capped at 50 reads per tick (~3.2 MB) to keep SketchUp's UI responsive.
+- **Several SketchUp processes** ([docs/multi-instance.md](docs/multi-instance.md)): on Windows every open model is its own SketchUp process, and each one's server binds the first free port of `port`..`port + Config::PORT_SPAN - 1` (`Server#bind_first_free`; only EADDRINUSE/EACCES move on). The Python side keeps one connection **per port** (`connection._connections`), finds instances with `discovery.discover()` (hello + `get_instance_info` on each port of `SKETCHUP_MCP_PORT_SPAN`), and routes every tool to `connection.target_port()`: the one chosen with `select_sketchup_instance`, else the first port's, else — after a refused connect, which proves nothing was sent — the only other one running (`discovery.follow_lone_instance`; it raises rather than guess between several, and never swaps a choice). `tests/conftest.py` stubs `discovery.discover` for every test so no test can reach a developer's live SketchUp.
+- **Persistent socket**: Python server holds one TCP connection per SketchUp; `asyncio.Lock` serializes tool-calls on each. Ruby reads non-blocking inside `UI.start_timer`, capped at 50 reads per tick (~3.2 MB) to keep SketchUp's UI responsive.
 - **Ruby supports N concurrent TCP clients**: `core/server.rb` keeps
   `@clients` (sock → ClientState) + a global FIFO `@frame_queue`. Each
   timer tick: accept connections, drain reads into each client's
@@ -117,7 +118,8 @@ Log-level changes apply immediately. Enabling Ruby evaluation requires confirmin
 **Python (MCP server invoked by Claude)** — configured through ENV in the Claude Desktop MCP config:
 
 - `SKETCHUP_MCP_HOST` (default `127.0.0.1`) — where to connect to the SketchUp extension
-- `SKETCHUP_MCP_PORT` (default `9876`)
+- `SKETCHUP_MCP_PORT` (default `9876`) — the first SketchUp's port
+- `SKETCHUP_MCP_PORT_SPAN` (default `10`) — how many ports from it on to look for SketchUp processes
 - `SKETCHUP_MCP_TIMEOUT` (default `60` seconds)
 - `SKETCHUP_MCP_LOG_LEVEL` (`DEBUG` / `INFO` / `WARN` / `ERROR`; default `INFO`)
 
@@ -139,7 +141,9 @@ JSON-RPC 2.0 envelopes; each MCP tool is a thin Python wrapper that builds a JSO
 | `tools.py` | One MCP tool wrapper per Ruby handler (FastMCP definitions) |
 | `jini_tools.py` | The 14 jini-tools wrappers — inspection, scene, plugin development ([docs/jini-tools.md](docs/jini-tools.md)) |
 | `prompts.py` | MCP prompt definitions (`sketchup_modeling_strategy`) |
-| `connection.py` | Persistent TCP socket, length-prefix framing, `asyncio.Lock` |
+| `connection.py` | Persistent TCP socket per SketchUp port, length-prefix framing, `asyncio.Lock`; which SketchUp the tools act on (`target_port`) |
+| `discovery.py` | Finding the SketchUp processes on the port range, and following the only one left ([docs/multi-instance.md](docs/multi-instance.md)) |
+| `instances.py` | `list_sketchup_instances`, `select_sketchup_instance` |
 | `config.py` | ENV-driven config |
 | `errors.py` | `SketchUpError` parsed from JSON-RPC error envelopes |
 | `server.py` | CLI entry point (`[project.scripts]` → `sketchup-mcp2`) |

@@ -58,6 +58,7 @@ _RETRY_SAFE_TOOLS: frozenset[str] = frozenset(
         "get_viewport_screenshot",  # read-only viewport capture; idempotent in
                                     # both restore_view modes (no document state changes)
         "get_version",              # read-only diagnostic; no side effects
+        "get_instance_info",        # read-only: which SketchUp this is (discovery)
         # jini-tools (docs/jini-tools.md): reads only. capture_view and
         # profile_view restore the camera and roll back their hiding, like
         # get_viewport_screenshot. solid_report stays out: with save_as and
@@ -445,10 +446,16 @@ class SketchUpConnection:
         return await self._recv_frame()
 
 
-# Module-level singleton mutated by `get_connection`/`close_connection`.
-# Declared at module scope (rather than inside `get_connection`) so tests can
-# `monkeypatch.setattr(conn_module, "_connection", ...)` without `raising=False`.
-_connection: SketchUpConnection | None = None
+# One connection per SketchUp, keyed by port. On Windows every open model is
+# its own SketchUp process with its own server: the first on config.PORT, the
+# next ones on the following free ports (see discovery.py). Each entry is the
+# old singleton's contract for its own port - one object, one socket.
+_connections: dict[int, SketchUpConnection] = {}
+# The SketchUp the tools act on: the one chosen with select_sketchup_instance,
+# else the one followed when the configured port's SketchUp went away
+# (discovery.follow_lone_instance), else config.PORT.
+_selected_port: int | None = None
+_followed_port: int | None = None
 # Lock guarding cold-start race: without it, two concurrent first-callers of
 # `get_connection` could each create their own `SketchUpConnection` and orphan
 # one of the resulting sockets. Created at module import (asyncio.Lock since
@@ -458,8 +465,46 @@ _connection: SketchUpConnection | None = None
 _get_connection_lock: asyncio.Lock = asyncio.Lock()
 
 
-async def get_connection() -> SketchUpConnection:
-    """Singleton accessor — только создаёт/возвращает объект, НЕ коннектит.
+def target_port() -> int:
+    """The port of the SketchUp the tools act on."""
+    return _selected_port or _followed_port or config.PORT
+
+
+def target_reason() -> str:
+    """Why :func:`target_port` is that port - for list_sketchup_instances."""
+    if _selected_port is not None:
+        return "selected"
+    if _followed_port is not None:
+        return "followed: the only SketchUp running when the first port's went away"
+    return "default: the first port"
+
+
+def selected_port() -> int | None:
+    """The port chosen with select_sketchup_instance, or None."""
+    return _selected_port
+
+
+def select_port(port: int | None) -> None:
+    """Act on the SketchUp at ``port`` from now on; None goes back to the
+    default (the first port, or the one SketchUp running)."""
+    global _selected_port, _followed_port
+    _selected_port = port
+    _followed_port = None
+
+
+def follow_port(port: int) -> None:
+    """Act on ``port`` until it goes away or a choice is made - see
+    discovery.follow_lone_instance. Never overrides a selection."""
+    global _followed_port
+    if _selected_port is None:
+        _followed_port = None if port == config.PORT else port
+
+
+async def get_connection(port: int | None = None) -> SketchUpConnection:
+    """Accessor — только создаёт/возвращает объект, НЕ коннектит.
+
+    The connection to ``port``, or to the SketchUp the tools act on
+    (:func:`target_port`); one object per port, made on first use.
 
     Коннект выполняется исключительно под инстансным ``conn._lock``: лениво
     в ``_send_once`` или явно через ``ensure_connected()`` (eager-connect в
@@ -468,25 +513,24 @@ async def get_connection() -> SketchUpConnection:
     ``send_command`` (T-08/PY-CONN-01): ложные «internal: reader is None»
     и утечка сокетов при рестарте SketchUp.
     """
-    global _connection
     async with _get_connection_lock:
-        if _connection is None:
-            _connection = SketchUpConnection(
-                host=config.HOST, port=config.PORT, timeout=config.TIMEOUT
-            )
-        return _connection
+        key = port if port is not None else target_port()
+        conn = _connections.get(key)
+        if conn is None:
+            conn = SketchUpConnection(host=config.HOST, port=key, timeout=config.TIMEOUT)
+            _connections[key] = conn
+        return conn
 
 
 async def close_connection() -> None:
-    """Close and forget the module singleton (ждёт in-flight запрос под conn._lock).
+    """Close and forget every connection (ждёт in-flight запрос под conn._lock).
 
     Тело — под ``_get_connection_lock``: без него параллельный
     ``get_connection()`` может получить полузакрытый объект, а после
-    обнуления ``_connection`` создать ВТОРОЙ «singleton» с собственным
-    сокетом (регрессия инварианта одного соединения).
+    очистки создать ВТОРОЙ объект для того же порта с собственным
+    сокетом (регрессия инварианта одного соединения на порт).
     """
-    global _connection
     async with _get_connection_lock:
-        if _connection is not None:
-            await _connection.aclose()
-            _connection = None
+        for conn in list(_connections.values()):
+            await conn.aclose()
+        _connections.clear()

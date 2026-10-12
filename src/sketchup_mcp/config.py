@@ -51,7 +51,22 @@ def _env_log_level(name: str, default: str) -> str:
     return raw
 
 
+def _env_span(name: str, default: str) -> int:
+    raw = os.getenv(name, default)
+    try:
+        span = int(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from None
+    if not 1 <= span <= 100:
+        raise ValueError(f"{name} must be in 1..100, got {span}")
+    return span
+
+
 PORT: int = _env_port("SKETCHUP_MCP_PORT", "9876")
+# How many ports from PORT on to look for SketchUp on. On Windows each open
+# model is its own SketchUp process with its own server; the first takes PORT,
+# the next ones the following free ports (the plugin's Config::PORT_SPAN).
+PORT_SPAN: int = _env_span("SKETCHUP_MCP_PORT_SPAN", "10")
 HOST: str = os.getenv("SKETCHUP_MCP_HOST", "127.0.0.1")
 TIMEOUT: float = _env_timeout("SKETCHUP_MCP_TIMEOUT", "60")
 LOG_LEVEL: str = _env_log_level("SKETCHUP_MCP_LOG_LEVEL", "INFO")

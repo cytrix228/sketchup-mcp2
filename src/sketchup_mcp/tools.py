@@ -12,7 +12,7 @@ from typing import Annotated, Literal, Optional
 from mcp.server.fastmcp import Context, Image
 from pydantic import AfterValidator, Field
 
-from sketchup_mcp import compat, config
+from sketchup_mcp import compat, config, discovery
 from sketchup_mcp.app import mcp
 from sketchup_mcp.connection import get_connection
 from sketchup_mcp.errors import IncompatibleVersionError, SketchUpError, format_error
@@ -70,7 +70,18 @@ async def _raw_call(ctx: Context, tool_name: str, /, **kwargs) -> dict:
     # ConnectionError при недоступном SketchUp поднимает send_command
     # (ленивый connect под conn._lock, T-08), не get_connection — callers
     # ловят её как раньше.
-    return await sketchup.send_command(tool_name, kwargs)  # raises SketchUpError
+    try:
+        return await sketchup.send_command(tool_name, kwargs)  # raises SketchUpError
+    except ConnectionError:
+        # Only a refused CONNECT raises ConnectionError (_connect_or_raise);
+        # every failure after it is a SketchUpError. So nothing was sent, and
+        # the call can go to the one other SketchUp running when nothing was
+        # chosen - see discovery.follow_lone_instance, which raises instead
+        # where it must not guess.
+        other = await discovery.follow_lone_instance()
+        if other is None:
+            raise
+        return await other.send_command(tool_name, kwargs)
 
 
 def _extract_text(result: object) -> str:

@@ -89,9 +89,15 @@ All dimensions in **millimeters**; angles in **degrees**. Every entity-returning
 | Variable | Default | Description |
 |---|---|---|
 | `SKETCHUP_MCP_HOST` | `127.0.0.1` | Where to connect to the SketchUp extension |
-| `SKETCHUP_MCP_PORT` | `9876` | TCP port |
+| `SKETCHUP_MCP_PORT` | `9876` | TCP port - the first SketchUp's; see below |
+| `SKETCHUP_MCP_PORT_SPAN` | `10` | How many ports from `SKETCHUP_MCP_PORT` on to look for SketchUp windows |
 | `SKETCHUP_MCP_TIMEOUT` | `60` | Per-tool-call timeout (seconds) |
 | `SKETCHUP_MCP_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARN` / `ERROR` |
+
+**Several SketchUp windows.** On Windows each open model is its own SketchUp
+process. Each one's server takes the next free port after the first (9876,
+9877, …), and `list_sketchup_instances` / `select_sketchup_instance` choose
+which one the tools act on — see [docs/multi-instance.md](docs/multi-instance.md).
 
 ### Ruby side (Settings dialog inside SketchUp)
 

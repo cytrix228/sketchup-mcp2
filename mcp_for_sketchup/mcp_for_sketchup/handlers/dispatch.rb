@@ -123,6 +123,7 @@ module MCPforSketchUp
         when "get_selection"         then Handlers::Model.get_selection(params)
         when "get_viewport_screenshot" then Handlers::View.viewport_screenshot(params)
         when "get_version"             then Handlers::System.get_version(params)
+        when "get_instance_info"       then Handlers::System.get_instance_info(params)
         when "get_edit_context"      then Handlers::Inspect.get_edit_context(params)
         when "solid_report"          then Handlers::Inspect.solid_report(params)
         when "query_faces"           then Handlers::Inspect.query_faces(params)

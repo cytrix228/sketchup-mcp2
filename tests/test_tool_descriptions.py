@@ -9,7 +9,7 @@ import sketchup_mcp.tools  # noqa: F401 — регистрация тулов
 
 async def test_every_tool_parameter_has_description():
     tools = await mcp.list_tools()
-    assert len(tools) == 36  # 22 + 14 jini-tools (docs/jini-tools.md)
+    assert len(tools) == 38  # 22 + 14 jini-tools (docs/jini-tools.md) + 2 multi-instance (docs/multi-instance.md)
     missing = []
     for tool in tools:
         for pname, pschema in tool.inputSchema.get("properties", {}).items():

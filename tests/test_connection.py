@@ -481,21 +481,21 @@ async def test_get_connection_does_not_open_socket(monkeypatch):
     disconnect() параллельного send_command гонялся бы с ним за _reader/_writer."""
     from sketchup_mcp import connection as conn_module
 
-    monkeypatch.setattr(conn_module, "_connection", None)
+    monkeypatch.setattr(conn_module, "_connections", {})
     with patch(
         "sketchup_mcp.connection.asyncio.open_connection",
         side_effect=AssertionError("get_connection must not connect"),
     ):
         conn = await conn_module.get_connection()
     assert conn._writer is None
-    monkeypatch.setattr(conn_module, "_connection", None)
+    monkeypatch.setattr(conn_module, "_connections", {})
 
 
 async def test_ensure_connected_raises_connection_error_when_refused(monkeypatch):
     """Отказ TCP теперь всплывает из ensure_connected (как раньше из get_connection)."""
     from sketchup_mcp import connection as conn_module
 
-    monkeypatch.setattr(conn_module, "_connection", None)
+    monkeypatch.setattr(conn_module, "_connections", {})
     with patch(
         "sketchup_mcp.connection.asyncio.open_connection",
         side_effect=ConnectionRefusedError("nope"),
@@ -504,7 +504,7 @@ async def test_ensure_connected_raises_connection_error_when_refused(monkeypatch
         with pytest.raises(ConnectionError) as exc_info:
             await conn.ensure_connected()
     assert "cannot connect" in str(exc_info.value)
-    monkeypatch.setattr(conn_module, "_connection", None)
+    monkeypatch.setattr(conn_module, "_connections", {})
 
 
 async def test_send_command_raises_connection_error_when_refused():
@@ -528,9 +528,9 @@ async def test_close_connection_resets_singleton(monkeypatch):
     from sketchup_mcp.connection import SketchUpConnection
 
     fake = SketchUpConnection(host="x", port=0, timeout=1.0)
-    monkeypatch.setattr(conn_module, "_connection", fake)
+    monkeypatch.setattr(conn_module, "_connections", {0: fake})
     await conn_module.close_connection()
-    assert conn_module._connection is None
+    assert conn_module._connections == {}
 
 
 async def test_get_connection_cold_start_race_creates_singleton_once(monkeypatch):
@@ -546,7 +546,7 @@ async def test_get_connection_cold_start_race_creates_singleton_once(monkeypatch
     """
     from sketchup_mcp import connection as conn_module
 
-    monkeypatch.setattr(conn_module, "_connection", None)
+    monkeypatch.setattr(conn_module, "_connections", {})
 
     open_call_count = 0
     gate = asyncio.Event()
@@ -602,7 +602,7 @@ async def test_get_connection_cold_start_race_creates_singleton_once(monkeypatch
     )
 
     # Cleanup для последующих тестов.
-    monkeypatch.setattr(conn_module, "_connection", None)
+    monkeypatch.setattr(conn_module, "_connections", {})
 
 
 async def test_aclose_cannot_clobber_concurrent_reconnect():

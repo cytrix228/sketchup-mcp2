@@ -59,4 +59,5 @@ mcp = FastMCP(
 # list — registration happens at import time.
 import sketchup_mcp.tools  # noqa: E402, F401
 import sketchup_mcp.jini_tools  # noqa: E402, F401
+import sketchup_mcp.instances  # noqa: E402, F401
 import sketchup_mcp.prompts  # noqa: E402, F401

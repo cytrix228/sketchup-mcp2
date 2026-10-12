@@ -2,6 +2,7 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 import pytest_asyncio
 
 
@@ -45,3 +46,17 @@ async def make_connection(fake_streams):
         return conn
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sketchup(monkeypatch):
+    """No test may find a real SketchUp: a refused connection makes the tools
+    look for one (discovery.follow_lone_instance), and this machine may well
+    be running one. Discovery finds nothing unless a test says otherwise, and
+    the choice of SketchUp starts unset in every test."""
+    from sketchup_mcp import connection, discovery
+
+    monkeypatch.setattr(discovery, "discover", AsyncMock(return_value=[]))
+    monkeypatch.setattr(connection, "_selected_port", None)
+    monkeypatch.setattr(connection, "_followed_port", None)
+    monkeypatch.setattr(connection, "_connections", {})

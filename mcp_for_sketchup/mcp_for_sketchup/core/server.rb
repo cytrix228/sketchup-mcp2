@@ -29,8 +29,13 @@ module MCPforSketchUp
       FRAME_QUEUE_SOFT_MAX      = 256     # очередь насыщена — чтение приостанавливается (T-13.2, P-06)
       PRE_HANDSHAKE_DEADLINE_S  = 30.0    # коннект без валидного hello закрывается (T-13.5)
 
+      # The port actually bound - Config.port, or the first free one after it
+      # (see bind_first_free). nil until started.
+      attr_reader :port
+
       def initialize
         @server         = nil
+        @port           = nil
         @clients        = {}    # sock => ClientState
         @frame_queue    = []    # [[ClientState, body_bytes], ...]
         @next_client_id = 0
@@ -41,7 +46,7 @@ module MCPforSketchUp
 
       def start
         return if @running
-        @server = TCPServer.new(Config.host, Config.port)
+        @server, @port = bind_first_free(Config.host, Config.port)
         # Server-side trail for the LAN-exposure risk the Settings dialog already
         # warns about in its UI. Fires once, here at the actual bind site, so a
         # non-loopback bind (e.g. 0.0.0.0) leaves a WARN in the console/log even
@@ -65,9 +70,29 @@ module MCPforSketchUp
           end
         end
         @server = nil
+        @port = nil
       end
 
       private
+
+      # Multi-instance: on Windows every open model is its own SketchUp
+      # process, and each runs this server. The first takes Config.port; the
+      # next ones take the following free ports, up to Config::PORT_SPAN in
+      # all, where the Python side looks for them (SKETCHUP_MCP_PORT_SPAN).
+      # Only a port in use moves on - any other bind error (an unresolvable
+      # host, say) is raised as before.
+      def bind_first_free(host, first)
+        last = [first + Config::PORT_SPAN - 1, 65_535].min
+        taken = nil
+        (first..last).each do |port|
+          begin
+            return [TCPServer.new(host, port), port]
+          rescue Errno::EADDRINUSE, Errno::EACCES => e
+            taken = e
+          end
+        end
+        raise taken || Errno::EADDRINUSE.new("#{host}:#{first}")
+      end
 
       # Loopback hosts that keep the server reachable only from this machine.
       # Anything else (0.0.0.0, ::, an explicit LAN IP, …) is reachable by other
